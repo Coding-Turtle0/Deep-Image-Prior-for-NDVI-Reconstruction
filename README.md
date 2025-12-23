@@ -1,234 +1,84 @@
 # Deep-Image-Prior-for-NDVI-Reconstruction
-This repository highlights the use of Deep Image Prior (DIP) for reconstructing NDVI from cloud obscured satellite images. Hence, further research on this area can prove to be beneficial for cleaning of noisy satellite data.  
+This repository presents a Deep Image Prior (DIP)–based approach for reconstructing cloud-corrupted NDVI using real MODIS satellite data. The method relies entirely on the implicit regularization of an untrained convolutional neural network and does not require any training data, pretrained weights, or historical imagery.
 
-1. Problem Overview
+The implementation demonstrates that meaningful vegetation structure can be recovered from a single corrupted observation by directly optimizing network parameters on the target image.
 
-Satellite-derived vegetation indices such as the Normalized Difference Vegetation Index (NDVI) are fundamental for monitoring vegetation health, agricultural productivity, and land-cover dynamics. However, optical satellite imagery is frequently corrupted by cloud cover, leading to missing or unreliable NDVI values. Recovering vegetation information in these cloud-occluded regions constitutes an ill-posed inverse problem, as multiple plausible reconstructions may exist for the same corrupted observation.
+Project Motivation
 
-Traditional approaches to NDVI gap filling often rely on temporal interpolation, multi-temporal composites, or supervised learning methods that require large historical datasets and region-specific training. In contrast, this project explores the use of Deep Image Prior (DIP), which leverages the implicit bias of convolutional neural network architectures to regularize inverse problems without requiring any training data.
+Cloud contamination is a persistent problem in optical remote sensing and significantly limits the usability of vegetation indices such as NDVI. Conventional gap-filling techniques typically rely on temporal compositing, spatial interpolation, or supervised learning models trained on large historical datasets.
 
-The objective of this work is to reconstruct cloud-corrupted NDVI using a single satellite image, real cloud masks, and an untrained neural network optimized directly on the corrupted observation.
+This project explores an alternative paradigm: using Deep Image Prior to recover missing NDVI values directly from a single cloud-corrupted image, without any external data. The goal is to assess whether architectural bias alone is sufficient to reconstruct vegetation structure under realistic cloud conditions.
 
-2. Dataset Description
-2.1 Source Data
+Dataset Description
+Source Product
 
-The dataset used in this project is derived from the MODIS MOD13Q1 product, which provides 16-day composite NDVI at 250 m spatial resolution. MOD13Q1 is widely used in vegetation and climate studies due to its radiometric consistency and global coverage.
+The dataset is derived from the MODIS MOD13Q1 product, which provides 16-day composite NDVI at 250 m spatial resolution. MOD13Q1 is widely used for vegetation monitoring due to its global coverage and radiometric consistency.
 
-From the MOD13Q1 HDF file, the following layers were extracted:
+Extracted Layers
 
-NDVI: Scaled by the official MODIS factor (0.0001) to obtain physical NDVI values in the range 
-[
-−
-1
-,
-1
-]
-[−1,1].
+The following layers were extracted from the MOD13Q1 HDF file:
 
-Pixel Reliability Layer: Used to identify cloud-affected and unreliable pixels.
+NDVI (scaled using the official MODIS scale factor)
 
-2.2 Cloud Mask Construction
+Pixel Reliability layer
 
-The MODIS pixel reliability layer encodes data quality as:
+The pixel reliability layer was used to construct a realistic cloud mask based on MODIS quality flags.
 
-0: Good quality
+Cloud Masking Strategy
 
-1: Marginal quality
+Pixels marked as cloud, snow/ice, or marginal quality in the MODIS reliability layer were treated as missing data. Only pixels labeled as “good quality” were retained as valid observations.
 
-2: Snow / ice
+This approach ensures that the forward model reflects real satellite cloud contamination rather than synthetic masking patterns.
 
-3: Cloud
+Vegetation-Only Masking (Water Handling)
 
-A binary cloud mask was constructed by retaining only pixels with reliability value 0. All other pixels were treated as missing data in the forward model. This results in a realistic cloud-corrupted NDVI image that accurately reflects operational satellite conditions.
+Water bodies exhibit fundamentally different NDVI behavior compared to vegetated land. NDVI values over water are typically near zero or negative and do not follow the spatial continuity assumptions that Deep Image Prior exploits.
 
-2.3 Patch-Based Processing
+Including water pixels in the loss function and evaluation leads to degraded reconstruction quality and misleading performance metrics. To address this, vegetation-only masking was applied:
 
-Due to computational constraints and the local nature of vegetation structure, reconstruction was performed on a single 256 × 256 spatial patch extracted from the full NDVI tile. Patch-based processing is standard practice in remote sensing image restoration and enables efficient optimization while preserving spatial coherence.
+Pixels with NDVI ≤ 0 were excluded from both optimization and evaluation.
 
-3. Forward Model and Inverse Problem Formulation
+Reconstruction quality was assessed only over vegetated regions.
 
-The cloud corruption process is modeled as a masking operation:
+This masking strategy is standard practice in vegetation remote sensing studies and ensures that reported metrics reflect meaningful vegetation reconstruction.
 
-𝑦
-=
-𝑀
-⊙
-𝑥
-y=M⊙x
+Method Overview
 
-where:
+A fixed random noise tensor is provided as input to an untrained convolutional neural network.
 
-𝑥
-x is the unknown clean NDVI image,
+Network parameters are optimized directly on the cloud-corrupted NDVI image.
 
-𝑀
-M is the binary cloud mask,
+The loss function is computed only over cloud-free, vegetation-only pixels.
 
-𝑦
-y is the observed cloud-corrupted NDVI.
+Input noise injection and early stopping are used to prevent overfitting.
 
-The inverse problem consists of estimating 
-𝑥
-x given 
-𝑦
-y and 
-𝑀
-M, which is ill-posed due to the loss of information in masked regions.
+Optimization is accelerated using GPU computation.
 
-4. Deep Image Prior Methodology
-4.1 Core Idea of Deep Image Prior
+The method relies solely on architectural bias and does not use any training data.
 
-Deep Image Prior exploits the observation that convolutional neural networks naturally favor structured, low-frequency, and spatially coherent solutions. When optimized to fit a single corrupted image, the network reconstructs meaningful image structure before overfitting to noise or artifacts.
+Implementation Details
 
-Crucially, no training dataset or pretrained weights are used. The network parameters are optimized from random initialization using only the corrupted observation and a data fidelity loss.
+Framework: MATLAB Deep Learning Toolbox
 
-4.2 Network Architecture
+Hardware: NVIDIA RTX 3050 GPU
 
-A lightweight convolutional network was used, consisting of:
+Processing strategy: Patch-based reconstruction
 
-A fixed random noise input with multiple channels
+Patch size: 256 × 256
 
-Two convolutional layers with 64 filters each
+Network depth: Moderate (64 feature channels)
 
-Leaky ReLU activations
+Optimization: Adam optimizer with early stopping
 
-A final convolution producing a single-channel NDVI output
+Stabilization: Input noise injection
 
-The network capacity was intentionally kept moderate to preserve the implicit regularization effect of DIP and to avoid overfitting.
+Patch-based processing is used to reduce memory requirements and improve optimization stability. This approach is standard in remote sensing image restoration.
 
-4.3 Loss Function
+Results
 
-Optimization was performed using a masked mean-squared error loss:
+Reconstruction was performed on a single 256 × 256 NDVI patch with real cloud coverage.
 
-𝐿
-=
-∥
-𝑀
-valid
-⊙
-(
-𝑓
-𝜃
-(
-𝑧
-)
-−
-𝑦
-)
-∥
-2
-L=∥M
-valid
-	​
-
-⊙(f
-θ
-	​
-
-(z)−y)∥
-2
-
-where:
-
-𝑓
-𝜃
-(
-𝑧
-)
-f
-θ
-	​
-
-(z) is the network output for fixed random input 
-𝑧
-z,
-
-𝑀
-valid
-M
-valid
-	​
-
- is a combined validity mask (cloud-free and vegetation-only pixels).
-
-Only pixels that are both cloud-free and valid vegetation pixels contribute to the loss.
-
-5. Vegetation-Only (Water-Aware) Masking
-5.1 Motivation
-
-Water bodies exhibit fundamentally different NDVI characteristics compared to vegetated regions, typically having near-zero or negative NDVI values. These regions lack the spatial continuity and structure that Deep Image Prior exploits.
-
-Including water pixels in the loss and evaluation introduces two issues:
-
-The network attempts to fit regions with no meaningful vegetation structure.
-
-Quantitative metrics become biased downward, misrepresenting reconstruction quality over vegetated land.
-
-5.2 Implementation
-
-To address this, a vegetation mask was defined as:
-
-𝑀
-veg
-=
-1
-(
-NDVI
-GT
->
-0
-)
-M
-veg
-	​
-
-=1(NDVI
-GT
-	​
-
->0)
-
-The final valid mask used for loss computation and evaluation is:
-
-𝑀
-valid
-=
-𝑀
-cloud
-∩
-𝑀
-veg
-M
-valid
-	​
-
-=M
-cloud
-	​
-
-∩M
-veg
-	​
-
-
-This ensures that the model is evaluated strictly on vegetation regions, which are the intended target of NDVI analysis.
-
-This approach is standard in vegetation remote sensing studies and does not artificially inflate results.
-
-6. Optimization Strategy
-
-The network was optimized using the Adam optimizer on an NVIDIA RTX 3050 GPU. Several DIP-specific stabilization strategies were employed:
-
-Input Noise Injection: Small Gaussian noise added to the fixed input at each iteration to prevent high-frequency overfitting.
-
-Early Stopping: Optimization terminated when loss stagnation indicated the onset of overfitting.
-
-Patch-Based GPU Acceleration: Enabled efficient convergence within minutes.
-
-7. Results
-7.1 Quantitative Results (Vegetation-Only)
-
-On a representative 256 × 256 patch, the proposed method achieved:
+Quantitative Results (Vegetation-Only)
 
 RMSE: 0.0180
 
@@ -238,36 +88,53 @@ SSIM: 0.9590
 
 These results indicate near-perfect structural recovery of vegetation patterns despite significant cloud occlusion and the absence of any training data.
 
-7.2 Qualitative Observations
+Qualitative Observations
 
-Visually, the reconstructed NDVI exhibits:
+Smooth and spatially coherent vegetation regions
 
-Smooth and coherent vegetation regions
-
-Accurate recovery under large cloud gaps
+Accurate recovery beneath cloud gaps
 
 No artificial textures or checkerboard artifacts
 
-Clear preservation of spatial gradients and boundaries
+Preservation of large-scale vegetation gradients
 
-8. Discussion
+Why Deep Image Prior Works Well for NDVI
 
-The results demonstrate that Deep Image Prior provides a powerful regularization mechanism for NDVI reconstruction, even in the absence of training data. The strong performance highlights the suitability of convolutional inductive bias for modeling vegetation structure.
+NDVI fields are spatially smooth and structured
 
-The explicit exclusion of water bodies ensures that evaluation metrics reflect meaningful vegetation reconstruction rather than mixed land-cover effects. While the approach is computationally more intensive than interpolation-based methods, it avoids reliance on historical data, pretrained models, or region-specific tuning.
+Convolutional architectures naturally favor such structure
 
-9. Limitations and Future Work
+The network learns large-scale patterns before fitting fine-scale noise
 
-This study evaluates DIP on a single spatial patch. Future work may include:
+Early stopping prevents overfitting to corrupted observations
 
-Multi-patch or full-tile reconstruction
+These properties align well with the characteristics of vegetation indices.
 
-Quantitative comparison with interpolation and variational baselines
+Limitations
 
-Joint reconstruction and super-resolution
+Reconstruction is demonstrated on a single spatial patch
 
-Extension to other vegetation indices such as LAI or EVI
+Computational cost is higher than simple interpolation methods
 
+Water regions are not reconstructed due to fundamentally different NDVI behavior
+
+Future Work
+
+Multi-patch and full-tile reconstruction
+
+Comparison with interpolation and variational baselines
+
+Joint cloud removal and super-resolution
+
+Extension to LAI and other vegetation indices
+
+Integration with multi-spectral reflectance data
 10. Conclusion
 
 This project demonstrates that Deep Image Prior can successfully reconstruct cloud-corrupted NDVI from a single satellite image using no training data. By combining realistic cloud masks, vegetation-aware loss formulation, and GPU-accelerated optimization, the method achieves high-fidelity vegetation reconstruction and provides a viable alternative to data-hungry supervised approaches.
+
+References
+
+Ulyanov, D., Vedaldi, A., & Lempitsky, V. (2018).
+Deep Image Prior.
+IEEE Conference on Computer Vision and Pattern Recognition (CVPR).
